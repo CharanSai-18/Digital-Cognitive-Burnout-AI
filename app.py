@@ -1,152 +1,177 @@
 import streamlit as st
 import pandas as pd
+import os
 import matplotlib.pyplot as plt
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(
-    page_title="AI Focus & Burnout Dashboard",
-    layout="wide",
-)
+# ------------------------------------------------
+# PAGE CONFIG
+# ------------------------------------------------
+st.set_page_config(page_title="AI Focus & Burnout", layout="wide")
 
-# ---------------- CSS ----------------
-st.markdown("""
-<style>
-.card {
-    padding: 18px;
-    border-radius: 14px;
-    background: #0b1220;
-    color: white;
-    text-align: center;
-}
-.card-title {
-    font-size: 14px;
-    color: #9ca3af;
-}
-.card-value {
-    font-size: 26px;
-    font-weight: 600;
-}
+# ------------------------------------------------
+# SIMPLE MOBILE LOGIN (SIMULATION)
+# ------------------------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-.low { background: #064e3b; }
-.medium { background: #78350f; }
-.high { background: #7f1d1d; }
+def login_page():
+    st.title("📱 Login")
+    mobile = st.text_input("Enter Mobile Number")
+    otp = st.text_input("Enter OTP")
 
-.section {
-    margin-top: 30px;
-}
-</style>
-""", unsafe_allow_html=True)
+    if st.button("Login"):
+        if mobile and otp:
+            st.session_state.logged_in = True
+            st.success("Login Successful ✅")
+            st.rerun()
+        else:
+            st.error("Enter details")
 
-# ---------------- LOAD DATA ----------------
-df = pd.read_csv("data/processed/daily_scores.csv")
-df["date"] = pd.to_datetime(df["date"])
+if not st.session_state.logged_in:
+    login_page()
+    st.stop()
+
+# ------------------------------------------------
+# LOAD DATA
+# ------------------------------------------------
+DATA_PATH = "data/processed/daily_scores.csv"
+
+if not os.path.exists(DATA_PATH):
+    st.error("Run scoring engine first.")
+    st.stop()
+
+df = pd.read_csv(DATA_PATH)
 latest = df.iloc[-1]
 
-# ---------------- RISK COLOR ----------------
-risk = latest["burnout_risk"]
-risk_class = "low" if risk=="LOW" else "medium" if risk=="MEDIUM" else "high"
+# ------------------------------------------------
+# HEADER
+# ------------------------------------------------
+st.title("🧠 AI Focus & Burnout Detection System")
+st.caption("Passive monitoring • Daily insights • Burnout prevention")
 
-# ---------------- HEADER ----------------
-st.markdown("""
-### 🧠 AI Focus & Burnout Detection System  
-*Passive monitoring · Cognitive insights · Burnout prevention*
-""")
+# ------------------------------------------------
+# SIDEBAR NAVIGATION
+# ------------------------------------------------
+st.sidebar.title("📌 Navigation")
+page = st.sidebar.radio("Go to", [
+    "🏠 Home",
+    "📊 Analytics",
+    "📈 Progress",
+    "⭐ Pro",
+    "⚙ Settings"
+])
 
-# ---------------- SUMMARY ----------------
-st.markdown("<div class='section'></div>", unsafe_allow_html=True)
-st.subheader("📌 Today’s Summary")
+# ------------------------------------------------
+# COLOR FUNCTION
+# ------------------------------------------------
+def risk_color(risk):
+    if risk == "LOW":
+        return "green"
+    elif risk == "MEDIUM":
+        return "orange"
+    else:
+        return "red"
 
-c1, c2, c3 = st.columns(3)
+# ------------------------------------------------
+# HOME PAGE
+# ------------------------------------------------
+if page == "🏠 Home":
+    st.header("📌 Today's Summary")
 
-with c1:
-    st.markdown(f"""
-    <div class="card {risk_class}">
-        <div class="card-title">Burnout Risk</div>
-        <div class="card-value">{risk}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
 
-with c2:
-    st.markdown(f"""
-    <div class="card">
-        <div class="card-title">Cognitive Load</div>
-        <div class="card-value">{round(latest['cognitive_load_score'],1)}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with c1:
+        st.markdown(f"### Burnout Risk")
+        st.markdown(f"<h1 style='color:{risk_color(latest['burnout_risk'])}'>{latest['burnout_risk']}</h1>", unsafe_allow_html=True)
 
-with c3:
-    st.markdown(f"""
-    <div class="card">
-        <div class="card-title">Focus Score</div>
-        <div class="card-value">{round(latest['focus_score'],1)}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with c2:
+        st.metric("Cognitive Load", round(latest["cognitive_load_score"], 1))
 
-# ---------------- ACTIVITY ----------------
-st.markdown("<div class='section'></div>", unsafe_allow_html=True)
-st.subheader("📊 Activity Overview")
+    with c3:
+        st.metric("Focus Score", round(latest["focus_score"], 1))
 
-a1, a2, a3 = st.columns(3)
+    st.divider()
 
-for col, title, key in [
-    (a1, "Active Minutes", "active_minutes"),
-    (a2, "Idle Minutes", "idle_minutes"),
-    (a3, "Unique Apps Used", "unique_apps_used"),
-]:
-    with col:
-        st.markdown(f"""
-        <div class="card">
-            <div class="card-title">{title}</div>
-            <div class="card-value">{latest[key]}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # Activity
+    st.header("📊 Activity Overview")
 
-# ---------------- SCREEN ----------------
-st.markdown("<div class='section'></div>", unsafe_allow_html=True)
-st.subheader("🖥 Screen Usage")
+    a1, a2, a3 = st.columns(3)
+    a1.metric("Active Minutes", latest["active_minutes"])
+    a2.metric("Idle Minutes", latest["idle_minutes"])
+    a3.metric("Unique Apps Used", latest["unique_apps_used"])
 
-s1, s2 = st.columns(2)
+    st.divider()
 
-with s1:
-    st.markdown(f"""
-    <div class="card">
-        <div class="card-title">Screen ON (mins)</div>
-        <div class="card-value">{latest['ON']}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Screen
+    st.header("💻 Screen Usage")
+    s1, s2 = st.columns(2)
+    s1.metric("Screen ON", latest["ON"])
+    s2.metric("Screen OFF", latest["OFF"])
 
-with s2:
-    st.markdown(f"""
-    <div class="card">
-        <div class="card-title">Screen OFF (mins)</div>
-        <div class="card-value">{latest['screen_off_minutes']}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.divider()
 
-# ---------------- GRAPH ----------------
-st.markdown("<div class='section'></div>", unsafe_allow_html=True)
-st.subheader("📈 Focus vs Cognitive Load (7 Days)")
+    # AI Recommendation
+    st.header("💡 AI Recommendation")
 
-fig, ax = plt.subplots(figsize=(7,3))
-ax.plot(df["date"], df["focus_score"], marker="o", label="Focus")
-ax.plot(df["date"], df["cognitive_load_score"], marker="o", label="Cognitive Load")
-ax.set_ylabel("Score")
-ax.legend()
-ax.grid(alpha=0.3)
+    if latest["burnout_risk"] == "LOW":
+        st.success("Great balance. Keep it up.")
+    elif latest["burnout_risk"] == "MEDIUM":
+        st.warning("Moderate burnout risk. Take short breaks.")
+    else:
+        st.error("High burnout risk. Rest immediately.")
 
-st.pyplot(fig)
+# ------------------------------------------------
+# ANALYTICS PAGE
+# ------------------------------------------------
+elif page == "📊 Analytics":
+    st.header("📊 Workload Analytics")
 
-# ---------------- AI MESSAGE ----------------
-st.markdown("<div class='section'></div>", unsafe_allow_html=True)
-st.subheader("💡 AI Recommendation")
+    fig, ax = plt.subplots()
+    ax.plot(df["cognitive_load_score"])
+    ax.set_title("Cognitive Load Trend")
+    st.pyplot(fig)
 
-if risk == "LOW":
-    st.success("Healthy focus pattern. Keep it up.")
-elif risk == "MEDIUM":
-    st.warning("Moderate strain detected. Consider short breaks.")
-else:
-    st.error("High burnout risk detected. Immediate rest advised.")
+    fig, ax = plt.subplots()
+    ax.plot(df["focus_score"])
+    ax.set_title("Focus Trend")
+    st.pyplot(fig)
 
-# ---------------- DATA ----------------
-with st.expander("📅 Last 7 Days Data"):
-    st.dataframe(df.tail(7), use_container_width=True)
+# ------------------------------------------------
+# PROGRESS PAGE
+# ------------------------------------------------
+elif page == "📈 Progress":
+    st.header("📈 Your Improvement Over Time")
+
+    avg_focus = df["focus_score"].mean()
+    avg_load = df["cognitive_load_score"].mean()
+
+    st.metric("Average Focus", round(avg_focus, 1))
+    st.metric("Average Cognitive Load", round(avg_load, 1))
+
+# ------------------------------------------------
+# PRO FEATURES PAGE
+# ------------------------------------------------
+elif page == "⭐ Pro":
+    st.header("⭐ Premium Features")
+
+    st.info("📊 Advanced dashboards")
+    st.info("⏳ Smart focus timer")
+    st.info("🧠 Personalized AI coach")
+
+    st.warning("Upgrade coming soon 🚀")
+
+# ------------------------------------------------
+# SETTINGS PAGE
+# ------------------------------------------------
+elif page == "⚙ Settings":
+    st.header("⚙ Settings")
+
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.rerun()
+
+# ------------------------------------------------
+# FOOTER
+# ------------------------------------------------
+st.divider()
+st.success("🏆 AI Focus & Burnout System Running Successfully")
