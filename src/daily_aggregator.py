@@ -1,56 +1,131 @@
 import pandas as pd
-import os
+from datetime import datetime
+from pathlib import Path
 
-# Paths
-activity_file = "data/raw/activity_log.csv"
-screen_file = "data/raw/screen_log.csv"
-app_file = "data/raw/app_usage_log.csv"
-output_file = "data/processed/daily_summary.csv"
+# =====================================================
+# PATHS
+# =====================================================
+RAW_PATH = Path("data/raw/activity_log.csv")
+PROCESSED_PATH = Path("data/processed/daily_scores.csv")
 
-os.makedirs("data/processed", exist_ok=True)
 
-# Load data
-activity = pd.read_csv(activity_file)
-screen = pd.read_csv(screen_file)
-apps = pd.read_csv(app_file)
+# =====================================================
+# HELPERS
+# =====================================================
+def ensure_files():
+    """Create folders/files if not exist"""
+    PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Convert timestamps
-activity["timestamp"] = pd.to_datetime(activity["timestamp"])
-screen["timestamp"] = pd.to_datetime(screen["timestamp"])
-apps["timestamp"] = pd.to_datetime(apps["timestamp"])
+    if not PROCESSED_PATH.exists():
+        columns = [
+            "mobile",
+            "date",
+            "ACTIVE",
+            "active_minutes",
+            "idle_minutes",
+            "OFF",
+            "ON",
+            "screen_off_minutes",
+            "unique_apps_used",
+            "app_switches",
+            "focus_score",
+            "break_score",
+            "cognitive_load_score",
+            "burnout_risk",
+        ]
+        pd.DataFrame(columns=columns).to_csv(PROCESSED_PATH, index=False)
 
-# Add date column
-activity["date"] = activity["timestamp"].dt.date
-screen["date"] = screen["timestamp"].dt.date
-apps["date"] = apps["timestamp"].dt.date
 
-# ---- ACTIVITY FEATURES ----
-activity_summary = activity.groupby("date")["status"].value_counts().unstack(fill_value=0)
-activity_summary["active_minutes"] = activity_summary.get("ACTIVE", 0) * (10 / 60)
-activity_summary["idle_minutes"] = activity_summary.get("IDLE", 0) * (10 / 60)
+# =====================================================
+# SCORING ENGINE
+# =====================================================
+def calculate_scores(df):
+    """Very simple scoring logic (can upgrade later)"""
 
-# ---- SCREEN FEATURES ----
-screen_summary = screen.groupby("date")["screen_status"].value_counts().unstack(fill_value=0)
-screen_summary["screen_off_minutes"] = screen_summary.get("OFF", 0) * (10 / 60)
+    active_minutes = df["active_minutes"].sum()
+    idle_minutes = df["idle_minutes"].sum()
+    on_count = df["ON"].sum()
+    off_count = df["OFF"].sum()
+    unique_apps = df["app"].nunique()
+    switches = df["app"].ne(df["app"].shift()).sum()
 
-# ---- APP FEATURES ----
-app_summary = apps.groupby("date")["app_name"].nunique().to_frame("unique_apps_used")
-apps["app_switch"] = apps["app_name"] != apps["app_name"].shift()
-switch_summary = apps.groupby("date")["app_switch"].sum().to_frame("app_switches")
+    # Focus = more active + less switching
+    focus_score = max(0, 100 - (switches * 2 + idle_minutes))
 
-# ---- MERGE ALL FEATURES ----
-daily_summary = activity_summary.merge(
-    screen_summary, on="date", how="outer"
-).merge(
-    app_summary, on="date", how="outer"
-).merge(
-    switch_summary, on="date", how="outer"
-)
+    # Break score = more idle + more off
+    break_score = idle_minutes + off_count
 
-daily_summary = daily_summary.fillna(0)
+    # Cognitive load = inverse of breaks
+    cognitive_load = max(0, 100 - break_score)
 
-# Save output
-daily_summary.to_csv(output_file)
+    # Burnout risk
+    if cognitive_load < 30:
+        risk = "LOW"
+    elif cognitive_load < 70:
+        risk = "MEDIUM"
+    else:
+        risk = "HIGH"
 
-print("Day 5 aggregation complete.")
-print("Saved to:", output_file)
+    return {
+        "ACTIVE": df["ACTIVE"].sum(),
+        "active_minutes": active_minutes,
+        "idle_minutes": idle_minutes,
+        "OFF": off_count,
+        "ON": on_count,
+        "screen_off_minutes": df["screen_off_minutes"].sum(),
+        "unique_apps_used": unique_apps,
+        "app_switches": switches,
+        "focus_score": focus_score,
+        "break_score": break_score,
+        "cognitive_load_score": cognitive_load,
+        "burnout_risk": risk,
+    }
+
+
+# =====================================================
+# MAIN FUNCTION
+# =====================================================
+def run_daily_aggregation(mobile):
+    ensure_files()
+
+    if not RAW_PATH.exists():
+        print("No raw data found")
+        return
+
+    raw_df = pd.read_csv(RAW_PATH)
+
+    if raw_df.empty:
+        print("Raw file empty")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # calculate
+    scores = calculate_scores(raw_df)
+
+    new_row = {"mobile": mobile, "date": today, **scores}
+
+    processed_df = pd.read_csv(PROCESSED_PATH)
+
+    # Remove existing record of today for this mobile
+    processed_df = processed_df[
+        ~(
+            (processed_df["mobile"].astype(str) == str(mobile))
+            & (processed_df["date"] == today)
+        )
+    ]
+
+    # Add new
+    processed_df = pd.concat([processed_df, pd.DataFrame([new_row])])
+
+    processed_df.to_csv(PROCESSED_PATH, index=False)
+
+    print("Daily aggregation complete ✅")
+
+
+# =====================================================
+# RUN MANUALLY
+# =====================================================
+if __name__ == "__main__":
+    mobile = input("Enter mobile number: ")
+    run_daily_aggregation(mobile)
